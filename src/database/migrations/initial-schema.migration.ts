@@ -42,6 +42,12 @@ export class InitialSchema1615123456789 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
+      CREATE INDEX "IDX_tasks_status" ON "tasks" ("status");
+    `);
+    await queryRunner.query(`
+      CREATE INDEX "IDX_tasks_priority" ON "tasks" ("priority");
+    `);
+    await queryRunner.query(`
       ALTER TABLE "tasks" ADD CONSTRAINT "FK_tasks_users" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE
     `);
   }
