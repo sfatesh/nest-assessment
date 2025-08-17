@@ -87,23 +87,21 @@ export class TasksController {
   async getStats() {
     try {
 
-      const [completed, inProgress, pending] = await Promise.all([
-        this.tasksService.findByStatus(TaskStatus.COMPLETED),
-        this.tasksService.findByStatus(TaskStatus.IN_PROGRESS),
-        this.tasksService.findByStatus(TaskStatus.PENDING),
-      ]);
+      // const [completed, inProgress, pending] = await Promise.all([
+      //   this.tasksService.findByStatus(TaskStatus.COMPLETED),
+      //   this.tasksService.findByStatus(TaskStatus.IN_PROGRESS),
+      //   this.tasksService.findByStatus(TaskStatus.PENDING),
+      // ]);
 
-      // If you want to also calculate high priority
-      const highPriorityCount = (await this.tasksService.findAll({ priority: TaskPriority.HIGH })).total;
+      // // If you want to also calculate high priority
+      // const highPriorityCount = (await this.tasksService.findAll({ priority: TaskPriority.HIGH })).total;
+      const statusResult = await this.tasksService.getStats();
 
+      if(!statusResult){
+        return errorResponse('No task statistics found', HttpStatus.NOT_FOUND);
+      }
       // Return structured response
-      return successResponse({
-        total: completed.length + inProgress.length + pending.length,
-        completed: completed.length,
-        inProgress: inProgress.length,
-        pending: pending.length,
-        highPriority: highPriorityCount,
-      }, 'Task statistics retrieved successfully', HttpStatus.OK);
+      return successResponse(statusResult, 'Task statistics retrieved successfully', HttpStatus.OK);
     } catch (error) {
       return errorResponse(
         error as string || 'An error occurred while fetching task statistics',
@@ -183,45 +181,45 @@ export class TasksController {
   }
 
   @Post('batch')
-@ApiOperation({ summary: 'Batch process multiple tasks' })
-async batchProcess(@Body() body: { tasks: string[]; action: string }) {
-  const { tasks: taskIds, action } = body;
+  @ApiOperation({ summary: 'Batch process multiple tasks' })
+  async batchProcess(@Body() body: { tasks: string[]; action: string }) {
+    const { tasks: taskIds, action } = body;
 
-  // Validate input upfront
-  if (!Array.isArray(taskIds) || taskIds.length === 0) {
-    return errorResponse('No tasks provided', HttpStatus.BAD_REQUEST);
-  }
-
-  if (!['complete', 'delete'].includes(action)) {
-    return errorResponse('Unknown batch action', HttpStatus.BAD_REQUEST);
-  }
-
-  try {
-    let result;
-
-    switch (action) {
-      case 'complete':
-        // ✅ bulk update (single DB query)
-        result = await this.tasksService.updateStatus(taskIds, TaskStatus.COMPLETED);
-        break;
-
-      case 'delete':
-        // ✅ bulk delete (single DB query)
-        result = await this.tasksService.bulkDelete(taskIds);
-        break;
+    // Validate input upfront
+    if (!Array.isArray(taskIds) || taskIds.length === 0) {
+      return errorResponse('No tasks provided', HttpStatus.BAD_REQUEST);
     }
 
-    return successResponse({
-      processed: taskIds.length,
-      affected: result?.affected || 0,
-    }, 'Batch processing completed', HttpStatus.OK);
+    if (!['complete', 'delete'].includes(action)) {
+      return errorResponse('Unknown batch action', HttpStatus.BAD_REQUEST);
+    }
 
-  } catch (error) {
-    return errorResponse(
-      error instanceof Error ? error.message : 'Batch processing failed',
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    try {
+      let result;
+
+      switch (action) {
+        case 'complete':
+          // ✅ bulk update (single DB query)
+          result = await this.tasksService.updateStatus(taskIds, TaskStatus.COMPLETED);
+          break;
+
+        case 'delete':
+          // ✅ bulk delete (single DB query)
+          result = await this.tasksService.bulkDelete(taskIds);
+          break;
+      }
+
+      return successResponse({
+        processed: taskIds.length,
+        affected: result?.affected || 0,
+      }, 'Batch processing completed', HttpStatus.OK);
+
+    } catch (error) {
+      return errorResponse(
+        error instanceof Error ? error.message : 'Batch processing failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
-}
 
 } 

@@ -8,6 +8,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { TaskStatus } from './enums/task-status.enum';
 import { TaskFilterDto } from './dto/task-filter.dto';
+import { TaskPriority } from './enums/task-priority.enum';
 
 @Injectable()
 export class TasksService {
@@ -42,13 +43,16 @@ export class TasksService {
 
   async findAll(queryParams: TaskFilterDto): Promise<{ data: Task[]; total: number }> {
 
-    const { status, priority, page = 1, limit = 10 } = queryParams;
+    const { status, priority, page = 1, limit = 10,userId } = queryParams;
     const skip = (page - 1) * limit;
 
     const where: any = {};
     if (status) where.status = status;
     if (priority) where.priority = priority;
+    if (userId) where.user = { id: userId };
+    if (priority) where.priority = priority;
     const [data, total] = await this.tasksRepository.findAndCount({
+      where,
       skip,
       take: limit,
       relations: ['user'], // load only what's needed
@@ -132,10 +136,10 @@ export class TasksService {
   }
 
   async remove(id: string): Promise<Task> {
-    
+
 
     const task = await this.tasksRepository.findOne({
-      where: { id},
+      where: { id },
     });
 
     if (!task) {
@@ -162,38 +166,63 @@ export class TasksService {
       select: ['status'],
     })
   }
-  
+
 
   async updateStatus(id: string | string[], status: string): Promise<{ affected: number }> {
-  const ids = Array.isArray(id) ? id : [id];    // ⇐ normalize
+    const ids = Array.isArray(id) ? id : [id];    // ⇐ normalize
 
-  return this.tasksRepository.manager.transaction(async manager => {
-    const result = await manager
-      .getRepository(Task)
-      .createQueryBuilder()
-      .update(Task)
-      .set({ status: status as TaskStatus })
-      .whereInIds(ids)
-      .execute();
+    return this.tasksRepository.manager.transaction(async manager => {
+      const result = await manager
+        .getRepository(Task)
+        .createQueryBuilder()
+        .update(Task)
+        .set({ status: status as TaskStatus })
+        .whereInIds(ids)
+        .execute();
 
-    return { affected: result.affected ?? 0 };
-  });
-}
+      return { affected: result.affected ?? 0 };
+    });
+  }
 
 
-async bulkDelete(taskIds: string[]): Promise<void> {
-  await this.tasksRepository.manager.transaction(async (manager) => {
-   const tasks = await manager.getRepository(Task).findBy({ id: In(taskIds) });
+  async bulkDelete(taskIds: string[]): Promise<void> {
+    await this.tasksRepository.manager.transaction(async (manager) => {
+      const tasks = await manager.getRepository(Task).findBy({ id: In(taskIds) });
 
-    if (!tasks.length) {
-      return 0;
-    }
+      if (!tasks.length) {
+        return 0;
+      }
 
-    // 2. Delete them
-    await manager.getRepository(Task).remove(tasks);
+      // 2. Delete them
+      await manager.getRepository(Task).remove(tasks);
 
-    return tasks; 
-  });
+      return tasks;
+    });
+  }
+
+  async getStats() {
+  const result = await this.tasksRepository
+    .createQueryBuilder('task')
+    .select('COUNT(*)', 'total')
+    .addSelect(`SUM(CASE WHEN task.status = :completed THEN 1 ELSE 0 END)`, 'completed')
+    .addSelect(`SUM(CASE WHEN task.status = :inProgress THEN 1 ELSE 0 END)`, 'inProgress')
+    .addSelect(`SUM(CASE WHEN task.status = :pending THEN 1 ELSE 0 END)`, 'pending')
+    .addSelect(`SUM(CASE WHEN task.priority = :high THEN 1 ELSE 0 END)`, 'highPriority')
+    .setParameters({
+      completed: TaskStatus.COMPLETED,
+      inProgress: TaskStatus.IN_PROGRESS,
+      pending: TaskStatus.PENDING,
+      high: TaskPriority.HIGH,
+    })
+    .getRawOne();
+
+  return {
+    total: Number(result.total),
+    completed: Number(result.completed),
+    inProgress: Number(result.inProgress),
+    pending: Number(result.pending),
+    highPriority: Number(result.highPriority),
+  };
 }
 
 }
